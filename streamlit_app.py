@@ -73,47 +73,49 @@ def load_chat_history(user_id):
 
 # Authentication Section
 if not st.session_state.user:
-    st.sidebar.title("Sign In / Sign Up")
-    email = st.sidebar.text_input("Email")
-    password = st.sidebar.text_input("Password", type="password")
-    sign_in = st.sidebar.button("Sign In")
-    sign_up = st.sidebar.button("Sign Up")
+    with st.sidebar:
+        st.title("Sign In / Sign Up")
+        email = st.text_input("Email")
+        password = st.text_input("Password", type="password")
+        sign_in = st.button("Sign In")
+        sign_up = st.button("Sign Up")
 
-    if sign_in or sign_up:
-        if not email or not password:
-            st.sidebar.error("Please fill in both email and password.")
+        if sign_in or sign_up:
+            if not email or not password:
+                st.error("Please fill in both email and password.")
 
-    # Sign In
-    if sign_in and email and password:
-        try:
-            user = auth.get_user_by_email(email)  # Check if user exists
-            st.session_state.user = {"email": email, "uid": user.uid}
-            st.session_state.chat_history = load_chat_history(user.uid)  # Load user's chat history
-            st.sidebar.success("Signed in successfully!")
-            time.sleep(2)
-        except firebase_admin.auth.UserNotFoundError:
-            st.sidebar.error("Account does not exist. Please sign up first.")
+        # Sign In
+        if sign_in and email and password:
+            try:
+                user = auth.get_user_by_email(email)  # Check if user exists
+                st.session_state.user = {"email": email, "uid": user.uid}
+                st.session_state.chat_history = load_chat_history(user.uid)  # Load user's chat history
+                st.success("Signed in successfully!")
+                time.sleep(2)
+            except firebase_admin.auth.UserNotFoundError:
+                st.error("Account does not exist. Please sign up first.")
 
-    # Sign Up
-    if sign_up and email and password:
-        try:
-            user = auth.create_user(email=email, password=password)
-            st.session_state.user = {"email": email, "uid": user.uid}
-            st.session_state.chat_history = []  # Initialize empty chat history for new user
-            st.sidebar.success("Account created successfully! You can now sign in.")
-        except Exception as e:
-            st.sidebar.error(f"Failed to create account: {e}")
+        # Sign Up
+        if sign_up and email and password:
+            try:
+                user = auth.create_user(email=email, password=password)
+                st.session_state.user = {"email": email, "uid": user.uid}
+                st.session_state.chat_history = []  # Initialize empty chat history for new user
+                st.success("Account created successfully! You can now sign in.")
+            except Exception as e:
+                st.error(f"Failed to create account: {e}")
 
 # After Successful Login
 if st.session_state.user:
     # Show the user's email in the top-right corner
-    st.sidebar.empty()
-    st.sidebar.write(f"Signed in as: {st.session_state.user['email']}")
-    sign_out = st.sidebar.button("Sign Out")
-    if sign_out:
-        st.session_state.user = None
-        st.session_state.chat_history = []
-        st.rerun()
+    with st.sidebar:
+        st.empty()
+        st.write(f"Signed in as: {st.session_state.user['email']}")
+        sign_out = st.button("Sign Out")
+        if sign_out:
+            st.session_state.user = None
+            st.session_state.chat_history = []
+            st.rerun()
 
     # Chat Interface
     st.title("Support Chat")
