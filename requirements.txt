@@ -5,3 +5,4 @@ requests-toolbelt<1.0,>=0.7.1
 langchain
 faiss-cpu
 tiktoken
+firebase-admin
