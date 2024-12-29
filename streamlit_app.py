@@ -47,12 +47,29 @@ if "chat_history" not in st.session_state:
 
 # Helper function to retrieve context from the vector store
 def get_context_from_vector_store(query):
-    if not isinstance(query, str):
-        raise ValueError("Query must be a string.")
     retriever = vector_store.as_retriever()
-    results = retriever.invoke(query.strip())  # Ensure clean string
+    results = retriever.invoke(query)  # Pass the query directly as a string
     context = "\n".join([doc.page_content for doc in results])
     return context
+
+# Helper function to format chat history
+def format_chat_history(chat_history):
+    formatted_history = []
+    for msg in chat_history:
+        role = "You" if msg["role"] == "user" else "Assistant"
+        formatted_history.append(f"{role}: {msg['content']}")
+    return "\n".join(formatted_history)
+
+# Save chat history to Firestore
+def save_chat_history(user_id, chat_history):
+    db.collection("users").document(user_id).set({"chat_history": chat_history}, merge=True)
+
+# Load chat history from Firestore
+def load_chat_history(user_id):
+    doc = db.collection("users").document(user_id).get()
+    if doc.exists:
+        return doc.to_dict().get("chat_history", [])
+    return []
 
 # Authentication Section
 if not st.session_state.user:
@@ -71,6 +88,7 @@ if not st.session_state.user:
         try:
             user = auth.get_user_by_email(email)  # Check if user exists
             st.session_state.user = {"email": email, "uid": user.uid}
+            st.session_state.chat_history = load_chat_history(user.uid)  # Load user's chat history
             st.sidebar.success("Signed in successfully!")
             time.sleep(2)
         except firebase_admin.auth.UserNotFoundError:
@@ -81,6 +99,7 @@ if not st.session_state.user:
         try:
             user = auth.create_user(email=email, password=password)
             st.session_state.user = {"email": email, "uid": user.uid}
+            st.session_state.chat_history = []  # Initialize empty chat history for new user
             st.sidebar.success("Account created successfully! You can now sign in.")
         except Exception as e:
             st.sidebar.error(f"Failed to create account: {e}")
@@ -93,11 +112,13 @@ if st.session_state.user:
     sign_out = st.sidebar.button("Sign Out")
     if sign_out:
         st.session_state.user = None
+        st.session_state.chat_history = []
         st.rerun()
 
     # Chat Interface
     st.title("Support Chat")
     chat_history = st.session_state.chat_history
+
     for msg in chat_history:
         role = "You" if msg["role"] == "user" else "Assistant"
         st.write(f"**{role}:** {msg['content']}")
@@ -108,7 +129,7 @@ if st.session_state.user:
     with col1:
         user_input = st.text_input(
             "Enter Your Message",
-            placeholder="Message the Support Assistant",
+            placeholder="Message the Enneagram Coach",
             key="chat_input",
             label_visibility="collapsed"
         )
@@ -116,37 +137,39 @@ if st.session_state.user:
     with col2:
         send_button = st.button("➤")  # Emoji for Send Button
 
-    if send_button and user_input.strip():
-        user_input = user_input.strip()
-        st.session_state.chat_history.append({"role": "user", "content": user_input})
+    if send_button and user_input.strip() != "":
+        chat_history.append({"role": "user", "content": user_input})
 
-        try:
-            # Retrieve relevant context from the vector store
-            context = get_context_from_vector_store(user_input)
+        # Retrieve relevant context from the vector store
+        context = get_context_from_vector_store(user_input)
 
-            # Combine context, role definition, and user input to send to OpenAI assistant
-            assistant_prompt = f"{ROLE_DEFINITION}\n\nContext:\n{context}\n\nUser Query:\n{user_input}"
+        # Format chat history
+        formatted_history = format_chat_history(chat_history)
 
-            # Call OpenAI Assistant API
-            response = client.chat.completions.create(
-                model="gpt-4",
-                messages=[{"role": "user", "content": assistant_prompt}]
-            )
+        # Combine context, role definition, chat history, and user input
+        assistant_prompt = (
+            f"{ROLE_DEFINITION}\n\n"
+            f"Chat History:\n{formatted_history}\n\n"
+            f"Context:\n{context}\n\n"
+            f"User Query:\n{user_input}"
+        )
 
-            # Get the assistant's response
-            bot_reply = response.choices[0].message.content
+        # Call OpenAI Assistant API
+        response = client.chat.completions.create(
+            model="gpt-4",
+            messages=[{"role": "user", "content": assistant_prompt}]
+        )
 
-            # Append to chat history
-            st.session_state.chat_history.append({"role": "assistant", "content": bot_reply})
+        # Get the assistant's response
+        bot_reply = response.choices[0].message.content
 
-            # Save chat history to Firestore
-            db.collection("users").document(st.session_state.user["uid"]).set(
-                {"chat_history": st.session_state.chat_history}, merge=True
-            )
+        # Append to chat history
+        chat_history.append({"role": "assistant", "content": bot_reply})
 
-            st.rerun()
-        except Exception as e:
-            st.error(f"An error occurred: {e}")
+        # Update session state and save to Firestore
+        st.session_state.chat_history = chat_history
+        save_chat_history(st.session_state.user["uid"], chat_history)
 
+        st.rerun()
 else:
     st.title("Please sign in to access the chat.")
