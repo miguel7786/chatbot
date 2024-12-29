@@ -3,6 +3,7 @@ openai
 pyrebase4==4.8.0
 requests-toolbelt<1.0,>=0.7.1
 langchain
+langchain-community
 faiss-cpu
 tiktoken
 firebase-admin
