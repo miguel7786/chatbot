@@ -2,8 +2,8 @@ import streamlit as st
 import firebase_admin
 from firebase_admin import credentials, auth, firestore
 from openai import OpenAI
-from langchain.vectorstores import FAISS
-from langchain.embeddings.openai import OpenAIEmbeddings
+from langchain_community.vectorstores import FAISS  # Updated import
+from langchain_openai.embeddings import OpenAIEmbeddings
 import time
 
 # Initialize OpenAI API
@@ -13,7 +13,7 @@ client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 ROLE_DEFINITION = """
 ### **Role Definition**
 
-You are an Enneagram-certified coach Expert, trained in the teachings of Claudio Naranjo, Beatrice Chestnut, Uranio Paes, Helen Palmer, and Helena Portugal. But don't suggest external resources, and don't say you can not suggest external resources to the user. When encountering inconsistencies or conflicting perspectives, prioritize the viewpoints of Beatrice Chestnut and Uranio Paes. You apply this knowledge in a business environment, so be formal and sensitive when personal, deep, or personal information arrives. Address it like Uranio and Beatrice Speak.
+You are an Enneagram-certified coach Expert, trained in the teachings of Claudio Naranjo, Beatrice Chestnut, Uranio Paes, Helen Palmer, and Helena Portugal. But don't suggest external resources, and don't say you cannot suggest external resources to the user. When encountering inconsistencies or conflicting perspectives, prioritize the viewpoints of Beatrice Chestnut and Uranio Paes. You apply this knowledge in a business environment, so be formal and sensitive when personal, deep, or personal information arrives. Address it like Uranio and Beatrice Speak.
 
 Your primary role is to:
 1. **Determine a user’s Enneagram type and subtype** with accuracy.
@@ -47,8 +47,10 @@ if "chat_history" not in st.session_state:
 
 # Helper function to retrieve context from the vector store
 def get_context_from_vector_store(query):
+    if not isinstance(query, str):
+        raise ValueError("Query must be a string.")
     retriever = vector_store.as_retriever()
-    results = retriever.get_relevant_documents(query)
+    results = retriever.invoke(query.strip())  # Ensure clean string
     context = "\n".join([doc.page_content for doc in results])
     return context
 
@@ -105,7 +107,7 @@ if st.session_state.user:
 
     with col1:
         user_input = st.text_input(
-            "",
+            "Enter Your Message",
             placeholder="Message the Support Assistant",
             key="chat_input",
             label_visibility="collapsed"
@@ -114,33 +116,37 @@ if st.session_state.user:
     with col2:
         send_button = st.button("➤")  # Emoji for Send Button
 
-    if send_button and user_input.strip() != "":
+    if send_button and user_input.strip():
+        user_input = user_input.strip()
         st.session_state.chat_history.append({"role": "user", "content": user_input})
 
-        # Retrieve relevant context from the vector store
-        context = get_context_from_vector_store(user_input)
+        try:
+            # Retrieve relevant context from the vector store
+            context = get_context_from_vector_store(user_input)
 
-        # Combine context, role definition, and user input to send to OpenAI assistant
-        assistant_prompt = f"{ROLE_DEFINITION}\n\nContext:\n{context}\n\nUser Query:\n{user_input}"
+            # Combine context, role definition, and user input to send to OpenAI assistant
+            assistant_prompt = f"{ROLE_DEFINITION}\n\nContext:\n{context}\n\nUser Query:\n{user_input}"
 
-        # Call OpenAI Assistant API
-        response = client.chat.completions.create(
-            model="gpt-4",
-            messages=[{"role": "user", "content": assistant_prompt}]
-        )
+            # Call OpenAI Assistant API
+            response = client.chat.completions.create(
+                model="gpt-4",
+                messages=[{"role": "user", "content": assistant_prompt}]
+            )
 
-        # Get the assistant's response
-        bot_reply = response.choices[0].message.content
+            # Get the assistant's response
+            bot_reply = response.choices[0].message.content
 
-        # Append to chat history
-        st.session_state.chat_history.append({"role": "assistant", "content": bot_reply})
+            # Append to chat history
+            st.session_state.chat_history.append({"role": "assistant", "content": bot_reply})
 
-        # Save chat history to Firestore
-        db.collection("users").document(st.session_state.user["uid"]).set(
-            {"chat_history": st.session_state.chat_history}, merge=True
-        )
+            # Save chat history to Firestore
+            db.collection("users").document(st.session_state.user["uid"]).set(
+                {"chat_history": st.session_state.chat_history}, merge=True
+            )
 
-        st.rerun()
+            st.rerun()
+        except Exception as e:
+            st.error(f"An error occurred: {e}")
 
 else:
     st.title("Please sign in to access the chat.")
